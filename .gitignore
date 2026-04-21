@@ -1,0 +1,25 @@
+# Binários
+/gopher-id
+/tools/audit/audit
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Dados e Persistência Local
+data/
+
+
+# Dependências (Opcional, mas recomendado se não usar vendor)
+# vendor/
+
+# Arquivos de IDE e Sistema
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.out
+
+# Logs
+*.log
