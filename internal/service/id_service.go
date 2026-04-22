@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	"gopher-id/internal/repository"
 
@@ -11,14 +12,13 @@ import (
 
 // IDService gerencia a lógica de geração de identificadores únicos
 type IDService struct {
-	seq *badger.Sequence
+	seq    *badger.Sequence
+	closed bool
+	mu     sync.RWMutex
 }
 
 // NewIDService inicializa o serviço de IDs criando uma sequência no repositório.
-// A 'key' identifica qual sequência estamos usando (ex: "order_ids") e
-// 'bandwidth' define quantos IDs serão reservados na memória por vez.
 func NewIDService(repo *repository.DB, key string, bandwidth uint64) (*IDService, error) {
-	// 1. Solicita ao repositório a inicialização da sequência no BadgerDB
 	seq, err := repo.GetSequence(key, bandwidth)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao inicializar sequência no repositório: %w", err)
@@ -29,8 +29,14 @@ func NewIDService(repo *repository.DB, key string, bandwidth uint64) (*IDService
 }
 
 // GetNextID obtém o próximo identificador único da sequência.
-// Esta operação é thread-safe e extremamente rápida, pois utiliza sync/atomic internamente.
 func (s *IDService) GetNextID() (uint64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.closed {
+		return 0, fmt.Errorf("serviço de IDs está desativado")
+	}
+
 	id, err := s.seq.Next()
 	if err != nil {
 		return 0, fmt.Errorf("erro ao gerar próximo ID: %w", err)
@@ -38,9 +44,16 @@ func (s *IDService) GetNextID() (uint64, error) {
 	return id, nil
 }
 
-// Close libera a sequência reservada na memória, garantindo que o ponto de controle
-// seja atualizado no disco antes do desligamento do servidor.
+// Close libera a sequência reservada na memória.
 func (s *IDService) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return nil
+	}
+
+	s.closed = true
 	if s.seq != nil {
 		log.Println("Liberando sequência do IDService...")
 		return s.seq.Release()
